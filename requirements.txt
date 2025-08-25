@@ -1,0 +1,7 @@
+numpy
+pandas
+scikit-learn
+nltk
+spacy
+streamlit
+mysql-connector-python
