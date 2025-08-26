@@ -1,38 +1,82 @@
+import os
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import os
 
-# Load job dataset
+# ---------------------------
+# File paths
+# ---------------------------
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # project root
+DATA_PATH = os.path.join(BASE_DIR, "data", "all_job_post.csv")
+
+
+# ---------------------------
+# Load jobs
+# ---------------------------
 def load_jobs():
-    # dynamically build path: backend/../data/jobs.csv
-    base_dir = os.path.dirname(__file__)  
-    file_path = os.path.join(base_dir, "..", "data", "jobs.csv")
-    jobs = pd.read_csv(file_path)
+    print(f"Loading jobs dataset from {DATA_PATH}...")
+    try:
+        jobs = pd.read_csv(DATA_PATH)
+    except FileNotFoundError:
+        print(f"❌ File not found at {DATA_PATH}")
+        return pd.DataFrame()
+
+    # Keep only relevant columns
+    required_columns = ["job_title", "category", "job_skill_set"]
+    if not all(col in jobs.columns for col in required_columns):
+        missing = [col for col in required_columns if col not in jobs.columns]
+        raise ValueError(f"❌ Missing required columns: {missing}")
+
+    jobs = jobs[required_columns].dropna()
     return jobs
-# Build recommender system
-def recommend_jobs(user_skills, top_n=3):
+
+
+# ---------------------------
+# Recommend jobs
+# ---------------------------
+def recommend_jobs(user_skills, top_n=5):
     jobs = load_jobs()
 
-    # TF-IDF on job skills column
-    vectorizer = TfidfVectorizer()
-    job_skill_matrix = vectorizer.fit_transform(jobs['skills'])
+    if jobs.empty:
+        return pd.DataFrame()
 
-    # Convert user input into vector
-    user_vector = vectorizer.transform([user_skills])
+    # Vectorize job skills
+    vectorizer = TfidfVectorizer(stop_words="english")
+    tfidf_matrix = vectorizer.fit_transform(jobs["job_skill_set"])
 
-    # Cosine similarity between user and jobs
-    similarity_scores = cosine_similarity(user_vector, job_skill_matrix).flatten()
+    # Transform user input
+    user_vec = vectorizer.transform([user_skills])
 
-    # Rank jobs by similarity
-    jobs['score'] = similarity_scores
-    ranked_jobs = jobs.sort_values(by="score", ascending=False)
+    # Compute cosine similarity
+    cosine_sim = cosine_similarity(user_vec, tfidf_matrix).flatten()
 
-    return ranked_jobs[['job_title', 'skills', 'location', 'salary', 'score']].head(top_n)
+    # Get top matches
+    top_indices = cosine_sim.argsort()[-top_n:][::-1]
 
-# Entry point
+    recommendations = jobs.iloc[top_indices].copy()
+    recommendations["similarity"] = cosine_sim[top_indices]
+
+    return recommendations
+
+
+# ---------------------------
+# Run as script
+# ---------------------------
 if __name__ == "__main__":
     user_input = input("Enter your skills (comma-separated): ")
-    recs = recommend_jobs(user_input)
-    print("\nRecommendations for:", user_input)
-    print(recs)
+    if not user_input:
+        print("Please enter some skills to get recommendations.")
+    else:
+        try:
+            recs = recommend_jobs(user_input)
+
+            if not recs.empty:
+                print("\n🔎 Recommended Jobs:")
+                for _, row in recs.iterrows():
+                    print(
+                        f"- {row['job_title']} ({row['category']}) | match={row['similarity']:.2f}"
+                    )
+            else:
+                print("No jobs found or no matches could be made with the provided dataset.")
+        except ValueError as e:
+            print(e)
