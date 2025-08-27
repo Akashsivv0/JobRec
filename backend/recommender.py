@@ -62,7 +62,7 @@ def recommend_jobs(user_skills, top_n=5):
 def add_to_recently_viewed(job_id):
     """Adds a job ID to the front of the queue."""
     # Add the ID to the queue
-    recently_viewed_queue.append(job_id) #the queue function
+    recently_viewed_queue.append(job_id) #the queue function this one 
 
 def get_recently_viewed():
     """Returns the jobs from the queue in order from newest to oldest."""
