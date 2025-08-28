@@ -1,46 +1,15 @@
-import os
-import os
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from collections import deque # Import deque for a more efficient queue
-
-# ---------------------------
-# File paths
-# ---------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_PATH = os.path.join(BASE_DIR, "data", "postings.csv")
-
-# A global queue to store recently viewed job IDs
-# Deque is more efficient for append and pop operations than a list
-recently_viewed_queue = deque(maxlen=5) 
-
-# ---------------------------
-# Load jobs
-# ---------------------------
-def load_jobs():
-    print(f"Loading jobs dataset from {DATA_PATH}...")
-    try:
-        jobs = pd.read_csv(DATA_PATH)
-    except FileNotFoundError:
-        print(f"❌ File not found at {DATA_PATH}. Please download the 'job_postings.csv' file from Kaggle and place it in a 'data' folder.")
-        return pd.DataFrame()
-
-    required_columns = ["title", "company_name", "location", "skills_desc"]
-    if not all(col in jobs.columns for col in required_columns):
-        missing = [col for col in required_columns if col not in jobs.columns]
-        raise ValueError(f"❌ Missing required columns: {missing}")
-
-    jobs = jobs[required_columns].dropna()
-    # Add a unique ID for each job to track them in the queue
-    jobs['job_id'] = jobs.index
-    return jobs
+from utils import load_jobs, add_to_recently_viewed, get_recently_viewed
+from graph_recommender import build_job_graph, find_related_jobs
 
 # ---------------------------
 # Recommend jobs
 # ---------------------------
 def recommend_jobs(user_skills, top_n=5):
-    jobs = load_jobs()
+    # Pass user skills to the load_jobs function to filter the dataset
+    jobs = load_jobs(skills=user_skills.split(',')) 
     if jobs.empty:
         return pd.DataFrame()
 
@@ -57,25 +26,6 @@ def recommend_jobs(user_skills, top_n=5):
     return recommendations
 
 # ---------------------------
-# Data structure function
-# ---------------------------
-def add_to_recently_viewed(job_id):
-    """Adds a job ID to the front of the queue."""
-    # Add the ID to the queue
-    recently_viewed_queue.append(job_id) #the queue function this one 
-
-def get_recently_viewed():
-    """Returns the jobs from the queue in order from newest to oldest."""
-    jobs = load_jobs()
-    if jobs.empty:
-        return pd.DataFrame()
-    
-    # Get the unique job IDs from the queue, maintaining order
-    viewed_ids = list(recently_viewed_queue)
-    # Get the corresponding job data from the main DataFrame
-    return jobs[jobs['job_id'].isin(viewed_ids)]
-
-# ---------------------------
 # Run as script
 # ---------------------------
 if __name__ == "__main__":
@@ -84,22 +34,49 @@ if __name__ == "__main__":
         print("Please enter some skills to get recommendations.")
     else:
         try:
-            recs = recommend_jobs(user_input)
-
-            if not recs.empty:
-                print("\n🔎 Recommended Jobs:")
-                for index, row in recs.iterrows():
-                    print(
-                        f"- {row['title']} at {row['company_name']} ({row['location']}) | match={row['similarity']:.2f}"
-                    )
-                    # Add the job to the recently viewed queue
-                    add_to_recently_viewed(row['job_id'])
-                
-                print("\n👁️ Recently Viewed Jobs:")
-                recent_jobs = get_recently_viewed()
-                for _, row in recent_jobs.iterrows():
-                     print(f"- {row['title']} at {row['company_name']} ({row['location']})")
+            # Load the data and build the graph once for efficiency
+            all_jobs = load_jobs()
+            if all_jobs.empty:
+                print("Cannot proceed without a valid dataset.")
             else:
-                print("No jobs found or no matches could be made with the provided dataset.")
+                job_graph = build_job_graph(all_jobs)
+                
+                recs = recommend_jobs(user_input)
+
+                if not recs.empty:
+                    print("\n🔎 Recommended Jobs:")
+                    for _, row in recs.iterrows():
+                        salary_info = ""
+                        if pd.notna(row.get('med_salary')):
+                            salary_info = f"({row['med_salary']:.2f} {row.get('pay_period', 'N/A')})"
+                        elif pd.notna(row.get('min_salary')) and pd.notna(row.get('max_salary')):
+                            salary_info = f"({row['min_salary']:.2f} - {row['max_salary']:.2f} {row.get('pay_period', 'N/A')})"
+                        
+                        print(
+                            f"- {row['title']} at {row['company_name']} ({row['location']}) {salary_info} | match={row['similarity']:.2f}"
+                        )
+                        # Add the job to the recently viewed queue
+                        add_to_recently_viewed(row['job_id'])
+                    
+                    # Get the ID of the first recommended job to find related jobs
+                    top_job_id = recs['job_id'].iloc[0]
+                    related_jobs = find_related_jobs(top_job_id, job_graph, all_jobs)
+
+                    print("\n🔗 Jobs You Might Also Like:")
+                    if not related_jobs.empty:
+                        for _, row in related_jobs.iterrows():
+                            print(
+                                f"- {row['title']} at {row['company_name']} ({row['location']}) | match={row['similarity']:.2f}"
+                            )
+                    else:
+                        print("No related jobs found based on graph similarity.")
+
+                    print("\n👁️ Recently Viewed Jobs:")
+                    recent_jobs = get_recently_viewed()
+                    for _, row in recent_jobs.iterrows():
+                         print(f"- {row['title']} at {row['company_name']} ({row['location']})")
+
+                else:
+                    print("No jobs found or no matches could be made with the provided dataset.")
         except ValueError as e:
-            print(e) 
+            print(e)

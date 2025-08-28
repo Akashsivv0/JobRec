@@ -5,3 +5,4 @@ nltk
 spacy
 streamlit
 mysql-connector-python
+networkx
