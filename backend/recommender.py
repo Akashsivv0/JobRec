@@ -3,6 +3,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from utils import load_jobs, add_to_recently_viewed, get_recently_viewed
 from graph_recommender import build_job_graph, find_related_jobs
+from pdf_parser import parse_pdf_resume # Import the new parser
 
 # ---------------------------
 # Recommend jobs
@@ -29,10 +30,34 @@ def recommend_jobs(user_skills, top_n=5):
 # Run as script
 # ---------------------------
 if __name__ == "__main__":
-    user_input = input("Enter your skills (comma-separated): ")
-    if not user_input:
-        print("Please enter some skills to get recommendations.")
+    # -------------------------------------------------------------
+    # THIS PART WILL BE HANDLED BY THE STREAMLIT FRONTEND LATER
+    # For now, we'll simulate the user's skills from a parsed resume
+    # -------------------------------------------------------------
+    resume_path = "path/to/your/resume.pdf" # This would be a dynamic path from the UI
+    try:
+        resume_text = parse_pdf_resume(resume_path)
+    except FileNotFoundError as e:
+        print(e)
+        resume_text = ""
+
+    if not resume_text:
+        print("\n❌ Could not parse resume. Please ensure the path is correct and the file is a valid PDF.")
+        print("💡 Since parsing failed, please enter your skills manually for now.")
+        user_input = input("Enter your skills (comma-separated): ")
+        if not user_input:
+            print("Please enter some skills to get recommendations.")
+        else:
+            user_skills = user_input
     else:
+        # We will make this part smarter later, but for now, we'll
+        # just use a sample string of skills that would be extracted
+        print("\n✅ Resume text parsed successfully. Using sample skills for now.")
+        user_skills = "java, python, machine learning, deep learning, excel"
+
+    # --- End of frontend simulation ---
+    
+    if user_skills:
         try:
             # Load the data and build the graph once for efficiency
             all_jobs = load_jobs()
@@ -41,7 +66,7 @@ if __name__ == "__main__":
             else:
                 job_graph = build_job_graph(all_jobs)
                 
-                recs = recommend_jobs(user_input)
+                recs = recommend_jobs(user_skills)
 
                 if not recs.empty:
                     print("\n🔎 Recommended Jobs:")
